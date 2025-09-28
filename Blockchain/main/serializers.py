@@ -1,9 +1,11 @@
 from rest_framework.serializers import ModelSerializer
 from rest_framework import serializers, exceptions, status
-from .models import Transaction, Utxo
-from django.db.model import Count
+from django.db.models import Count, Sum
 import hashlib
 import ecdsa
+import logging
+from .models import Transaction, Utxo
+
 
 class OutputSerializer(ModelSerializer):
     class Meta:
@@ -20,51 +22,63 @@ class InputSerializer(ModelSerializer):
 
 class TransactionSerializer(ModelSerializer):
     outputs = OutputSerializer(many=True)
-    inputs = InputSerializer(many=True)
+    inputs = serializers.PrimaryKeyRelatedField(many=True,
+                    queryset=Utxo.objects.filter(spent=False, isMined=True))
     
     class Meta: 
+        model = Transaction
         fields = ['inputs', 'outputs', 'sender_pubkey', 'recepient_pubkey', 'signature']
+    
+    def get_transacton_hash(self, inputs_ids, output_data, sender_pubkey_data):
+        transaction_recipe = f'Inputs:{inputs_ids}, '\
+                    f'Outputs:{[(output.recepient_pubkey, output.amount) for output in output_data]} '\
+                    f'Sender_pubkey: {sender_pubkey_data}'
+        hash = hashlib.sha256(transaction_recipe.encode()).hexdigest()
+        return hash
 
-    def create(self, validated_data):
-        inputs = validated_data['inputs'].filter(spent=False, 
-                                                 recepient_pubkey=validated_data['sender_pubkey'])\
-                                         .aggregate(inputs_amount=Count('amount'))
-        outputs = validated_data['outputs'].aggregate(outputs_amount=Count('amount'))
-        if inputs is None:
-            raise exceptions.ValidationError({'inputs': 'inputs were already spent or does\'nt'\
-                                              'belong to sender'}, code=status.HTTP_402_PAYMENT_REQUIRED)
+    def validate_transaction(self, validated_data, inputs_ids, outputs_data, sender_pubkey_data):
+        inputs = Utxo.objects.filter(id__in=input_ids, spent=False)\
+                             .aggregate(inputs_amount=Sum('amount'),
+                                        inputs_count=Count('id'))
 
-        if inputs.inputs_amount - outputs.outputs_amount < 0:
-            raise exceptions.ValidationError({'outputs': 'outputs amount more than inputs amount'},
-                                             code=status.HTTP_402_PAYMENT_REQUIRED)
+        if len(inputs_ids) != inputs['inputs_count']:
+            raise exceptions.ValidationError({'inputs': 'inputs were already'\
+                                             ' spent or does\'nt'\
+                                             ' belong to sender'}, 
+                                    code=status.HTTP_402_PAYMENT_REQUIRED)
+        
+        outputs_amount = sum(output.amount for output in outputs_data)
+        if inputs.inputs_amount - outputs_amount < 0:
+            raise exceptions.ValidationError({'outputs': 'outputs amount more'\
+                                              ' than inputs amount'},
+                                        code=status.HTTP_402_PAYMENT_REQUIRED)
 
-        transaction_recipe = f'Inputs:{inputs.values('id')}, '\
-                        f'Outputs:{outputs.values('recepient_pubkey, amount')}'\
-                        f'Sender_pubkey: {validated_data['sender_pubkey']}'
-
-        hash = hashlib.sha256(transaction_recipe).hexdigest()
-        sender_pubkey_bytes = bytes.fromhex(validated_data['sender_pubkey'])
-        vk = ecdsa.VerifyingKey.from_string(sender_pubkey_bytes, curve=ecdsa.SECP256k1,
+        hash = self.get_transacton_hash(inputs_ids, outputs_data, sender_pubkey_data)
+        sender_pubkey_bytes = bytes.fromhex(sender_pubkey_data)
+        vk = ecdsa.VerifyingKey.from_string(sender_pubkey_bytes,
+                                            curve=ecdsa.SECP256k1,
                                             hashfunc=hashlib.sha256)
         try:
-            vk.verify(validated_data['signature'],hash)
+            vk.verify(validated_data['signature'], hash)
         except ecdsa.BadSignatureError:
-            raise exceptions.ValidationError({'signature': 'signature is not valid'},
-                                             code=status.HTTP_403_FORBIDDEN)
+            raise exceptions.ValidationError({'signature': 'signature is not'\
+                                              'valid'},
+                                              code=status.HTTP_403_FORBIDDEN)
+        return True
 
+    def create(self, validated_data):
+        inputs_data = validated_data.pop('inputs')
+        outputs_data = validated_data.pop('outputs')
+        sender_pubkey_data = validated_data.pop('sender_pubkey')
+        inputs_ids = [input.id for input in inputs_data]
+        self.validate_transaction(validated_data, inputs_ids, outputs_data, sender_pubkey_data)
+        
+        hash = self.get_transacton_hash(inputs_ids, outputs_data, sender_pubkey_data)
         transaction = Transaction.objects.create(**validated_data, hash=hash)
-        for input in validated_data['inputs']:
-            utxo = Utxo.objects.get(input).update(spent=True)
-            transaction.inputs.add(utxo)
-
-        for output in validated_data['outputs']:
-            utxo = Utxo.objects.create(**output,
-                                sender_pubkey=validated_data['sender_pubkey'])
-            transaction.outputs.add(utxo)
-
-        
-        
-
-
-
-
+        inputs = Utxo.objects.filter(id__in=inputs_ids).update(spent=True)
+        transaction.inputs.add(inputs)
+        outputs = Utxo.objects.bulk_create(
+            [Utxo(**output, sender_pubkey=sender_pubkey_data) for output in outputs_data]
+        )
+        transaction.outputs.add(outputs)
+        return transaction
