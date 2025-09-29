@@ -31,13 +31,13 @@ class TransactionSerializer(ModelSerializer):
     
     def get_transacton_hash(self, inputs_ids, output_data, sender_pubkey_data):
         transaction_recipe = f'Inputs:{inputs_ids}, '\
-                    f'Outputs:{[(output.recepient_pubkey, output.amount) for output in output_data]} '\
+                    f'Outputs:{[(output['recepient_pubkey'], output['amount']) for output in output_data]} '\
                     f'Sender_pubkey: {sender_pubkey_data}'
         hash = hashlib.sha256(transaction_recipe.encode()).hexdigest()
         return hash
 
     def validate_transaction(self, validated_data, inputs_ids, outputs_data, sender_pubkey_data):
-        inputs = Utxo.objects.filter(id__in=input_ids, spent=False)\
+        inputs = Utxo.objects.filter(id__in=inputs_ids, spent=False)\
                              .aggregate(inputs_amount=Sum('amount'),
                                         inputs_count=Count('id'))
 
@@ -47,8 +47,8 @@ class TransactionSerializer(ModelSerializer):
                                              ' belong to sender'}, 
                                     code=status.HTTP_402_PAYMENT_REQUIRED)
         
-        outputs_amount = sum(output.amount for output in outputs_data)
-        if inputs.inputs_amount - outputs_amount < 0:
+        outputs_amount = sum(output['amount'] for output in outputs_data)
+        if inputs['inputs_amount'] - outputs_amount < 0:
             raise exceptions.ValidationError({'outputs': 'outputs amount more'\
                                               ' than inputs amount'},
                                         code=status.HTTP_402_PAYMENT_REQUIRED)
@@ -58,10 +58,12 @@ class TransactionSerializer(ModelSerializer):
         vk = ecdsa.VerifyingKey.from_string(sender_pubkey_bytes,
                                             curve=ecdsa.SECP256k1,
                                             hashfunc=hashlib.sha256)
+        signature_bytes = bytes.fromhex(validated_data['signature'])
+        
         try:
-            vk.verify(validated_data['signature'], hash)
+            vk.verify(signature_bytes, hash.encode())
         except ecdsa.BadSignatureError:
-            raise exceptions.ValidationError({'signature': 'signature is not'\
+            raise exceptions.ValidationError({'signature': 'signature is not '\
                                               'valid'},
                                               code=status.HTTP_403_FORBIDDEN)
         return True
@@ -76,9 +78,9 @@ class TransactionSerializer(ModelSerializer):
         hash = self.get_transacton_hash(inputs_ids, outputs_data, sender_pubkey_data)
         transaction = Transaction.objects.create(**validated_data, hash=hash)
         inputs = Utxo.objects.filter(id__in=inputs_ids).update(spent=True)
-        transaction.inputs.add(inputs)
+        transaction.inputs.set(inputs)
         outputs = Utxo.objects.bulk_create(
             [Utxo(**output, sender_pubkey=sender_pubkey_data) for output in outputs_data]
         )
-        transaction.outputs.add(outputs)
+        transaction.outputs.set(outputs)
         return transaction

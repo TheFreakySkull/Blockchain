@@ -12,8 +12,8 @@ class Utxo(models.Model):
 class Transaction(models.Model):
     inputs = models.ManyToManyField(Utxo, related_name='input_transactions')
     outputs = models.ManyToManyField(Utxo, related_name='output_transactions')
-    sender_pubkey = models.CharField(max_length=50)
-    recepient_pubkey = models.CharField(max_length=50)
+    sender_pubkey = models.CharField(max_length=250)
+    recepient_pubkey = models.CharField(max_length=250)
     signature = models.CharField(max_length=256)
     time_stamp = models.DateTimeField(auto_now_add=True)
     hash = models.CharField(max_length=256)
