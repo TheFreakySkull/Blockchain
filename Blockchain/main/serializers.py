@@ -40,7 +40,7 @@ class TransactionSerializer(ModelSerializer):
         return hash
 
     def validate_transaction(self, validated_data, inputs_ids, outputs_data, sender_pubkey_data):
-        inputs = Utxo.objects.filter(id__in=inputs_ids, spent=False)\
+        inputs = Utxo.objects.filter(id__in=inputs_ids, spent=False, recepient_pubkey=sender_pubkey_data)\
                              .aggregate(inputs_amount=Sum('amount'),
                                         inputs_count=Count('id'))
 
