@@ -3,7 +3,7 @@ from rest_framework import serializers, exceptions, status
 from django.db.models import Count, Sum
 import hashlib
 import ecdsa
-import logging
+
 from .models import Transaction, Utxo
 
 
@@ -34,6 +34,9 @@ class TransactionSerializer(ModelSerializer):
                     f'Outputs:{[(output['recepient_pubkey'], output['amount']) for output in output_data]} '\
                     f'Sender_pubkey: {sender_pubkey_data}'
         hash = hashlib.sha256(transaction_recipe.encode()).hexdigest()
+
+        with open('output.txt', 'w') as file:
+            file.write(hash)
         return hash
 
     def validate_transaction(self, validated_data, inputs_ids, outputs_data, sender_pubkey_data):
@@ -57,11 +60,15 @@ class TransactionSerializer(ModelSerializer):
         sender_pubkey_bytes = bytes.fromhex(sender_pubkey_data)
         vk = ecdsa.VerifyingKey.from_string(sender_pubkey_bytes,
                                             curve=ecdsa.SECP256k1,
-                                            hashfunc=hashlib.sha256)
+                                            hashfunc=hashlib.sha256,
+                                            validate_point=True)
         signature_bytes = bytes.fromhex(validated_data['signature'])
         
         try:
-            vk.verify(signature_bytes, hash.encode())
+            vk.verify(signature_bytes, hash.encode(), sigdecode=ecdsa.util.sigdecode_der)
+            with open('output.txt', 'a') as file:
+                file.write(f'{file} succes')
+
         except ecdsa.BadSignatureError:
             raise exceptions.ValidationError({'signature': 'signature is not '\
                                               'valid'},
@@ -78,7 +85,7 @@ class TransactionSerializer(ModelSerializer):
         hash = self.get_transacton_hash(inputs_ids, outputs_data, sender_pubkey_data)
         transaction = Transaction.objects.create(**validated_data, hash=hash)
         inputs = Utxo.objects.filter(id__in=inputs_ids).update(spent=True)
-        transaction.inputs.set(inputs)
+        transaction.inputs.add(inputs)
         outputs = Utxo.objects.bulk_create(
             [Utxo(**output, sender_pubkey=sender_pubkey_data) for output in outputs_data]
         )
