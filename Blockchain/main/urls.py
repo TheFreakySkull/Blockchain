@@ -7,5 +7,7 @@ urlpatterns= [
     path('block/create/', views.CreateBlock.as_view(),
          name='block_create'),
     path('block/accept/', views.AcceptBlock.as_view(),
-         name='block_accept')
+         name='block_accept'),
+    path('balance/', views.CountBalance.as_view(),
+         name='balance_count')
 ]
