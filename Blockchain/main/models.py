@@ -23,7 +23,7 @@ class Transaction(models.Model):
 class Block(models.Model):
     transactions = models.ManyToManyField(Transaction)
     hash = models.CharField(max_length=256)
-    previous_block_hash = models.CharField(max_length=256)
+    previous_block_hash = models.CharField(max_length=256, null=True)
     time_stamp = models.DateTimeField(auto_now_add=True)
     nonce = models.PositiveIntegerField()
 

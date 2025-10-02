@@ -4,7 +4,7 @@ from rest_framework import serializers, exceptions, status
 from django.db.models import Count, Sum
 import hashlib
 import ecdsa
-from django.conf import POW_ZEROS_AMOUNT, MINER_WIN_AMOUNT
+from django.conf import settings
 
 from .models import Transaction, Utxo, Block
 from . import utils
@@ -88,42 +88,51 @@ class TransactionSerializer(ModelSerializer):
         return transaction
 
 class BlockSerializer(ModelSerializer):
-    miner_pubkey = serializers.CharField(max_length=250)
+    miner_pubkey = serializers.CharField(max_length=250, write_only=True)
+    transactions = TransactionSerializer(many=True, read_only=True)
 
     class Meta:
         model = Block
-        fields = ['__all__', 'miner_pubkey']
+        fields = [
+            'transactions', 'hash', 'previous_block_hash',
+            'nonce', 'miner_pubkey'
+        ]
         read_only_fields = [
-            'hash', 'previous_block_hash',
-            'time_stamp', 'miner_pubkey'
+            'hash', 'previous_block_hash', 'transactions'
         ]
     def create(self, validated_data):
-        nonce = validated_data.pop['nonce']
+        nonce = validated_data.pop('nonce')
         body = utils.get_block_body(nonce)
-        hash = hashlib.sha256(body.encode())
-        if hash[:POW_ZEROS_AMOUNT] != '0' * POW_ZEROS_AMOUNT:
-            raise ValidationError('nonce': 'nonce does not valid or expired',
-                                  status=status.status.HTTP_400_BAD_REQUEST)
+        hash = hashlib.sha256(body.encode()).hexdigest()
+        if hash[:settings.POW_ZEROS_AMOUNT] != '0' * settings.POW_ZEROS_AMOUNT:
+            raise ValidationError({'nonce': 'nonce does not valid or expired'},
+                                  code=status.HTTP_400_BAD_REQUEST)
 
-        miner_pubkey = validated_data.pop['miner_pubkey']
+        miner_pubkey = validated_data.pop('miner_pubkey')
         miner_transaction = Transaction.objects.create(
-            inputs=None,
-            output=Utxo.objects.create(
-                recepient_pubkey=miner_pubkey,
-                sender_pubkey='system',
-                amount=MINER_WIN_AMOUNT,
-                isMined=True
-            ),
             sender_pubkey='system',
             recepient_pubkey=miner_pubkey,
             signature='system',
             generated=True,
-            hash=hashlib.sha256('system'.encode()),
+            hash=hashlib.sha256('system'.encode()).hexdigest(),
             isMined=True
         )
-        transactions = Transactions.objects.filter(isMined=False).update(isMined=True)
-        block = Block.objects.create(transactions=transactions+miner_transaction, hash=hash,
-                                     previous_block_hash=Block.objects.last('id').hash, nonce=nonce)
+
+        miner_transaction.outputs.set([Utxo.objects.create(
+                recepient_pubkey=miner_pubkey,
+                sender_pubkey='system',
+                amount=settings.MINER_FEE_AMOUNT,
+                isMined=True
+            )])
+
+        transactions = Transaction.objects.filter(isMined=False)
+        last_block = Block.objects.last()
+        previous_block_hash = last_block.hash if last_block else None
+
+        block = Block.objects.create(hash=hash,
+                previous_block_hash=previous_block_hash, nonce=nonce)
+        block.transactions.set(transactions)
+        block.transactions.update(isMined=True)
         return block
 
 

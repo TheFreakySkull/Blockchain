@@ -2,8 +2,10 @@ from django.urls import path
 from . import views
 
 urlpatterns= [
-    path('create/', views.CreateTransaction.as_view(), 
-         name='create_transaction'),
-    path('create_block/', views.CreateBlock.as_view(),
-         name='create_block')
+    path('transactions/create/', views.CreateTransaction.as_view(), 
+         name='transaction_create'),
+    path('block/create/', views.CreateBlock.as_view(),
+         name='block_create'),
+    path('block/accept/', views.AcceptBlock.as_view(),
+         name='block_accept')
 ]

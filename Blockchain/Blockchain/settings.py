@@ -125,3 +125,4 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 
 POW_ZEROS_AMOUNT = 1
+MINER_FEE_AMOUNT = 50
