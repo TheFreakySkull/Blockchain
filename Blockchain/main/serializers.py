@@ -7,7 +7,6 @@ import ecdsa
 from django.conf import settings
 
 from .models import Transaction, Utxo, Block
-from . import utils
 
 class UtxoSerializer(ModelSerializer):
     class Meta:
@@ -19,10 +18,10 @@ class TransactionSerializer(ModelSerializer):
     outputs = UtxoSerializer(many=True)
     inputs = serializers.PrimaryKeyRelatedField(many=True,
                     queryset=Utxo.objects.filter(spent=False, isMined=True))
-    
+
     class Meta: 
         model = Transaction
-        fields = ['inputs', 'outputs', 'sender_pubkey', 'recepient_pubkey', 'signature']
+        fields = ['id', 'inputs', 'outputs', 'sender_pubkey', 'recepient_pubkey', 'signature']
     
     def get_transacton_hash(self, inputs_ids, output_data, sender_pubkey_data):
         transaction_recipe = f'Inputs:{inputs_ids}, '\
@@ -102,6 +101,7 @@ class BlockSerializer(ModelSerializer):
         ]
     def create(self, validated_data):
         nonce = validated_data.pop('nonce')
+        from . import utils
         body = utils.get_block_body(nonce)
         hash = hashlib.sha256(body.encode()).hexdigest()
         if hash[:settings.POW_ZEROS_AMOUNT] != '0' * settings.POW_ZEROS_AMOUNT:
@@ -134,7 +134,3 @@ class BlockSerializer(ModelSerializer):
         block.transactions.set(transactions)
         block.transactions.update(isMined=True)
         return block
-
-
-
-    

@@ -9,5 +9,9 @@ urlpatterns= [
     path('block/accept/', views.AcceptBlock.as_view(),
          name='block_accept'),
     path('balance/', views.CountBalance.as_view(),
-         name='balance_count')
+         name='balance_count'),
+    path('chain/', views.GetChain.as_view(),
+         name='chain_get'),
+    path('mempool/', views.ListMempool.as_view(),
+         name='mempool')
 ]
