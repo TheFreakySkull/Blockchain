@@ -14,10 +14,14 @@ class UtxoSerializer(ModelSerializer):
         fields = ['id','recepient_pubkey', 'sender_pubkey', 'amount']
         read_only_fields = ['sender_pubkey']
 
+class InputSerializer(UtxoSerializer):
+    class Meta(UtxoSerializer.Meta):
+        read_only_fields = [
+            'recepient_pubkey', 'sender_pubkey', 'amount'
+        ]
 class TransactionSerializer(ModelSerializer):
     outputs = UtxoSerializer(many=True)
-    inputs = serializers.PrimaryKeyRelatedField(many=True,
-                    queryset=Utxo.objects.filter(spent=False, isMined=True))
+    inputs = InputSerializer(many=True)
 
     class Meta: 
         model = Transaction
@@ -34,7 +38,8 @@ class TransactionSerializer(ModelSerializer):
         return hash
 
     def validate_transaction(self, validated_data, inputs_ids, outputs_data, sender_pubkey_data):
-        inputs = Utxo.objects.filter(id__in=inputs_ids, spent=False, recepient_pubkey=sender_pubkey_data)\
+
+        inputs = Utxo.objects.filter(id__in=inputs_ids, spent=False, recepient_pubkey=sender_pubkey_data, isMined=True)\
                              .aggregate(inputs_amount=Sum('amount'),
                                         inputs_count=Count('id'))
 
@@ -92,12 +97,10 @@ class BlockSerializer(ModelSerializer):
 
     class Meta:
         model = Block
-        fields = [
-            'transactions', 'hash', 'previous_block_hash',
-            'nonce', 'miner_pubkey'
-        ]
+        fields = '__all__'
         read_only_fields = [
-            'hash', 'previous_block_hash', 'transactions'
+            'hash', 'previous_block_hash', 'transactions',
+            'time_stamp'
         ]
     def create(self, validated_data):
         nonce = validated_data.pop('nonce')
