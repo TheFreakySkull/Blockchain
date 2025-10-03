@@ -3,10 +3,11 @@ from rest_framework.generics import CreateAPIView, ListAPIView
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
+from django.conf import settings
 from django.db.models.aggregates import Sum
 
-from .models import Transaction, Block, Utxo
-from .serializers import TransactionSerializer, BlockSerializer, UtxoSerializer
+from .models import Transaction, Block, Utxo, Node
+from .serializers import NodeSerializer, TransactionSerializer, BlockSerializer, UtxoSerializer
 from . import utils
 
 class ListMempool(ListAPIView):
@@ -43,3 +44,19 @@ class CountBalance(APIView):
 class GetChain(ListAPIView):
     queryset = Block.objects.all()
     serializer_class = BlockSerializer
+
+class RegisterNode(CreateAPIView):
+    queryset = Node.objects.all()
+    serializer_class = NodeSerializer
+
+class Status(APIView):
+    def get(self, request):
+        return Response({
+            'info': 'Blockchain node',
+            'name': settings.NODE_NAME,
+            'status': 'OK',
+            'blocks_amount': Block.objects.count(),
+            'last_block_id': Block.objects.last().id,
+            'linked_nodes': NodeSerializer(Node.objects.all(), many=True)\
+                                          .data,
+        }, status=status.HTTP_200_OK)

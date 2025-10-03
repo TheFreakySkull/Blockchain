@@ -6,7 +6,7 @@ import hashlib
 import ecdsa
 from django.conf import settings
 
-from .models import Transaction, Utxo, Block
+from .models import Node, Transaction, Utxo, Block
 
 class UtxoSerializer(ModelSerializer):
     class Meta:
@@ -89,6 +89,8 @@ class TransactionSerializer(ModelSerializer):
             [Utxo(**output, sender_pubkey=sender_pubkey_data) for output in outputs_data]
         )
         transaction.outputs.set(outputs)
+        from .utils import send_transaction
+        send_transaction(validated_data)
         return transaction
 
 class BlockSerializer(ModelSerializer):
@@ -136,4 +138,18 @@ class BlockSerializer(ModelSerializer):
                 previous_block_hash=previous_block_hash, nonce=nonce)
         block.transactions.set(transactions)
         block.transactions.update(isMined=True)
+        from .utils import send_block
+        send_block(validated_data)
         return block
+
+class NodeSerializer(ModelSerializer):
+    class Meta:
+        model = Node
+        fields = '__all__'
+    
+    def create(self, validated_data):
+        from . import utils
+        if not utils.check_node(**validated_data):
+            raise ValidationError({'node': 'node is not valid'},
+                                   code=status.HTTP_400_BAD_REQUEST)
+        return super().create(validated_data)

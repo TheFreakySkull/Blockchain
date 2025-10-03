@@ -13,5 +13,9 @@ urlpatterns= [
     path('chain/', views.GetChain.as_view(),
          name='chain_get'),
     path('mempool/', views.ListMempool.as_view(),
-         name='mempool')
+         name='mempool'),
+    path('status/', views.Status.as_view(),
+         name='status'),
+    path('register_node/', views.RegisterNode.as_view(),
+         name='register_node')
 ]
