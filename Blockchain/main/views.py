@@ -60,3 +60,4 @@ class Status(APIView):
             'linked_nodes': NodeSerializer(Node.objects.all(), many=True)\
                                           .data,
         }, status=status.HTTP_200_OK)
+

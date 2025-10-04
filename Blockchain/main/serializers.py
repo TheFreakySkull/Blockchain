@@ -5,6 +5,7 @@ from django.db.models import Count, Sum
 import hashlib
 import ecdsa
 from django.conf import settings
+from . import tasks
 
 from .models import Node, Transaction, Utxo, Block
 
@@ -89,8 +90,7 @@ class TransactionSerializer(ModelSerializer):
             [Utxo(**output, sender_pubkey=sender_pubkey_data) for output in outputs_data]
         )
         transaction.outputs.set(outputs)
-        from .utils import send_transaction
-        send_transaction(validated_data)
+        tasks.send_transaction.delay(validated_data)
         return transaction
 
 class BlockSerializer(ModelSerializer):
@@ -138,8 +138,7 @@ class BlockSerializer(ModelSerializer):
                 previous_block_hash=previous_block_hash, nonce=nonce)
         block.transactions.set(transactions)
         block.transactions.update(isMined=True)
-        from .utils import send_block
-        send_block(validated_data)
+        tasks.send_block.delay(validated_data)
         return block
 
 class NodeSerializer(ModelSerializer):
@@ -148,8 +147,9 @@ class NodeSerializer(ModelSerializer):
         fields = '__all__'
     
     def create(self, validated_data):
-        from . import utils
-        if not utils.check_node(**validated_data):
+        check_node = tasks.check_node.delay(**validated_data)
+        if not check_node:
             raise ValidationError({'node': 'node is not valid'},
                                    code=status.HTTP_400_BAD_REQUEST)
+        tasks.send_register_node(**validated_data)
         return super().create(validated_data)

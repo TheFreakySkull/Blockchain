@@ -29,7 +29,7 @@ class Block(models.Model):
 
 
 class Node(models.Model):
-    ip = models.GenericIPAddressField()
+    ip = models.GenericIPAddressField(unique=True)
     port = models.PositiveIntegerField()
     
 
