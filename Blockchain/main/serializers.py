@@ -16,10 +16,11 @@ class UtxoSerializer(ModelSerializer):
         read_only_fields = ['sender_pubkey']
 
 class InputSerializer(UtxoSerializer):
+    id = serializers.IntegerField(required=False)
     class Meta(UtxoSerializer.Meta):
         read_only_fields = [
-            'recepient_pubkey', 'sender_pubkey', 'amount'
-        ]
+            'recepient_pubkey', 'sender_pubkey', 'amount']
+
 class TransactionSerializer(ModelSerializer):
     outputs = UtxoSerializer(many=True)
     inputs = InputSerializer(many=True)
@@ -34,8 +35,6 @@ class TransactionSerializer(ModelSerializer):
                     f'Sender_pubkey: {sender_pubkey_data}'
         hash = hashlib.sha256(transaction_recipe.encode()).hexdigest()
 
-        with open('output.txt', 'w') as file:
-            file.write(hash)
         return hash
 
     def validate_transaction(self, validated_data, inputs_ids, outputs_data, sender_pubkey_data):
@@ -66,9 +65,7 @@ class TransactionSerializer(ModelSerializer):
         
         try:
             vk.verify(signature_bytes, hash.encode(), sigdecode=ecdsa.util.sigdecode_der)
-            with open('output.txt', 'a') as file:
-                file.write(f'{file} succes')
-
+            
         except ecdsa.BadSignatureError:
             raise exceptions.ValidationError({'signature': 'signature is not '\
                                               'valid'},
@@ -79,7 +76,7 @@ class TransactionSerializer(ModelSerializer):
         inputs_data = validated_data.pop('inputs')
         outputs_data = validated_data.pop('outputs')
         sender_pubkey_data = validated_data.pop('sender_pubkey')
-        inputs_ids = [input.id for input in inputs_data]
+        inputs_ids = [input['id'] for input in inputs_data]
         self.validate_transaction(validated_data, inputs_ids, outputs_data, sender_pubkey_data)
         
         hash = self.get_transacton_hash(inputs_ids, outputs_data, sender_pubkey_data)
@@ -90,7 +87,14 @@ class TransactionSerializer(ModelSerializer):
             [Utxo(**output, sender_pubkey=sender_pubkey_data) for output in outputs_data]
         )
         transaction.outputs.set(outputs)
-        tasks.send_transaction.delay(validated_data)
+        tasks.send_transaction.delay({'inputs': inputs_data,
+                                      'outputs': outputs_data,
+                                      'sender_pubkey': sender_pubkey_data,
+                                     'signature': validated_data.pop(
+                                            'signature'),
+                                      'recepient_pubkey': 
+                                            validated_data.pop(
+                                                'recepient_pubkey')})
         return transaction
 
 class BlockSerializer(ModelSerializer):
@@ -106,14 +110,14 @@ class BlockSerializer(ModelSerializer):
         ]
     def create(self, validated_data):
         nonce = validated_data.pop('nonce')
+        miner_pubkey = validated_data.pop('miner_pubkey')
         from . import utils
-        body = utils.get_block_body(nonce)
+        body = utils.get_block_body(nonce, miner_pubkey)
         hash = hashlib.sha256(body.encode()).hexdigest()
         if hash[:settings.POW_ZEROS_AMOUNT] != '0' * settings.POW_ZEROS_AMOUNT:
             raise ValidationError({'nonce': 'nonce does not valid or expired'},
                                   code=status.HTTP_400_BAD_REQUEST)
 
-        miner_pubkey = validated_data.pop('miner_pubkey')
         miner_transaction = Transaction.objects.create(
             sender_pubkey='system',
             recepient_pubkey=miner_pubkey,
@@ -145,11 +149,12 @@ class NodeSerializer(ModelSerializer):
     class Meta:
         model = Node
         fields = '__all__'
+        read_only_fields = ['id']
     
     def create(self, validated_data):
         check_node = tasks.check_node.delay(**validated_data)
         if not check_node:
             raise ValidationError({'node': 'node is not valid'},
                                    code=status.HTTP_400_BAD_REQUEST)
-        tasks.send_register_node(**validated_data)
+        tasks.send_register_node.delay(validated_data)
         return super().create(validated_data)

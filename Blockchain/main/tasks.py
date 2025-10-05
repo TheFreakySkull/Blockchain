@@ -16,18 +16,21 @@ def check_node(ip, port):
 def send_transaction(validated_data):
     nodes = Node.objects.all()
     for node in nodes:
-        url = f'http://{node['ip']}:{node['port']}/transactions/create/'
-        requests.post(url, data=validated_data)
+        url = f'http://{node.ip}:{node.port}/transaction/create/'
+        response = requests.post(url, json=validated_data)
+        with open('output.txt', 'w') as file:
+            file.write(response.text)
 
 @shared_task
 def send_block(validated_data):
     nodes = Node.objects.all()
     for node in nodes:
-        url = f'http://{node['ip']}:{node['port']}/block/create/'
-        requests.post(url, data=validated_data)
+        url = f'http://{node.ip}:{node.port}/block/accept/'
+        requests.post(url, json=validated_data)
 
 @shared_task
 def send_register_node(ip, port):
+    data_dict = {'ip': settings.IP_ADDRESS,'port': settings.PORT}
     requests.post(f'http://{ip}:{port}/register_node/',
-                  data=[settings.IP_ADDRESS, settings.PORT])
+                  json=data_dict)
 
