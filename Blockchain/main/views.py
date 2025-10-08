@@ -5,9 +5,11 @@ from rest_framework.response import Response
 from rest_framework import status
 from django.conf import settings
 from django.db.models.aggregates import Sum
-
+from rest_framework.permissions import AllowAny
+from rest_framework.response import Response
 from .models import Transaction, Block, Utxo, Node
-from .serializers import NodeSerializer, TransactionSerializer, BlockSerializer, UtxoSerializer
+from .serializers import NodeSerializer, TransactionSerializer,\
+                         BlockSerializer, UtxoSerializer
 from . import utils
 
 class ListMempool(ListAPIView):
@@ -24,6 +26,10 @@ class AcceptBlock(CreateAPIView):
 
 class CreateBlock(APIView):
     def get(self, request):
+        if not utils.mempool_not_empty():
+            return Response({'detail': 'Mempool is empty, wait until next'\
+                                       ' transaction'}, 
+                            status=status.HTTP_400_BAD_REQUEST)
         return Response({'Block': utils.get_block_body('x')})
 
 
@@ -60,4 +66,3 @@ class Status(APIView):
             'linked_nodes': NodeSerializer(Node.objects.all(), many=True)\
                                           .data,
         }, status=status.HTTP_200_OK)
-

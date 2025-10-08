@@ -39,7 +39,8 @@ class TransactionSerializer(ModelSerializer):
 
     def validate_transaction(self, validated_data, inputs_ids, outputs_data, sender_pubkey_data):
 
-        inputs = Utxo.objects.filter(id__in=inputs_ids, spent=False, recepient_pubkey=sender_pubkey_data, isMined=True)\
+        inputs = Utxo.objects.filter(id__in=inputs_ids, spent=False,
+                                    recepient_pubkey=sender_pubkey_data, isMined=True)\
                              .aggregate(inputs_amount=Sum('amount'),
                                         inputs_count=Count('id'))
 
@@ -109,9 +110,14 @@ class BlockSerializer(ModelSerializer):
             'time_stamp'
         ]
     def create(self, validated_data):
+        from . import utils
+        if not utils.mempool_not_empty():
+            raise ValidationError({'detail': 'Mempool is empty,'\
+                                     ' wait until next transaction.'},
+                                   code=status.HTTP_400_BAD_REQUEST)
+
         nonce = validated_data.pop('nonce')
         miner_pubkey = validated_data.pop('miner_pubkey')
-        from . import utils
         body = utils.get_block_body(nonce, miner_pubkey)
         hash = hashlib.sha256(body.encode()).hexdigest()
         if hash[:settings.POW_ZEROS_AMOUNT] != '0' * settings.POW_ZEROS_AMOUNT:
@@ -123,7 +129,7 @@ class BlockSerializer(ModelSerializer):
             recepient_pubkey=miner_pubkey,
             signature='system',
             generated=True,
-            hash=hashlib.sha256('system'.encode()).hexdigest(),
+           hash=hashlib.sha256('system'.encode()).hexdigest(),
             isMined=True
         )
 

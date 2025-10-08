@@ -137,3 +137,5 @@ PORT = '8000'
 RABBITMQ_USER = 'guest'
 RABBITMQ_PASSWORD = 'guest'
 CELERY_IMPORTS = ('main.tasks',)
+
+

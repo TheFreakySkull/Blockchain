@@ -1,7 +1,9 @@
+import logging
 import requests
-
 from celery import shared_task
+from celery.utils.log import get_task_logger
 from django.conf import settings
+
 from .models import Node
 
 @shared_task
@@ -17,9 +19,7 @@ def send_transaction(validated_data):
     nodes = Node.objects.all()
     for node in nodes:
         url = f'http://{node.ip}:{node.port}/transaction/create/'
-        response = requests.post(url, json=validated_data)
-        with open('output.txt', 'w') as file:
-            file.write(response.text)
+        requests.post(url, json=validated_data)
 
 @shared_task
 def send_block(validated_data):
