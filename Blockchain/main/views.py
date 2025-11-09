@@ -30,7 +30,14 @@ class CreateBlock(APIView):
             return Response({'detail': 'Mempool is empty, wait until next'\
                                        ' transaction'}, 
                             status=status.HTTP_400_BAD_REQUEST)
-        return Response({'Block': utils.get_block_body('x')})
+        mempool = Transaction.objects.filter(isMined=False)
+        serializer = TransactionSerializer(mempool, many=True)
+        previous_block = Block.objects.last()
+        previous_block_hash = previous_block.hash if previous_block else None
+        response = utils.get_block_body(
+            serializer.data, previous_block_hash, nonce='x'
+        )
+        return Response({'Block': response})
 
 
 class CountBalance(APIView):

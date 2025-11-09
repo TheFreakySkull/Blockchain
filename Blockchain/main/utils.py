@@ -11,11 +11,15 @@ def get_block_body(transactions, previous_block_hash, nonce=None, miner_pubkey='
     return f'Mempool: {transactions}, Previous_block_hash: {previous_block_hash},'\
            f' Nonce: {nonce}, Miner_pubkey: {miner_pubkey}'
 
-def check_block_nonce(transactions, miner_pubkey, previous_block_hash,
-                      nonce):
+def get_block_hash(transactions, miner_pubkey, previous_block_hash,
+                   nonce):
     body = get_block_body(nonce, miner_pubkey, transactions,
                           previous_block_hash)
     hash = hashlib.sha256(body.encode()).hexdigest()
+    return hash
+
+def check_block_nonce(*args):
+    hash = get_block_hash(*args)
     if hash[:settings.POW_ZEROS_AMOUNT] != '0' * settings.POW_ZEROS_AMOUNT:
         return False
     return True
@@ -26,10 +30,12 @@ def mempool_not_empty():
 def get_transacton_hash(inputs_ids, output_data, sender_pubkey_data):
         transaction_recipe = f'Inputs:{inputs_ids}, '\
                     f'Outputs:{[(output['recepient_pubkey'], output['amount']) \
-                    for output in output_data]} '\
+                    for output in output_data]}, '\
                     f'Sender_pubkey: {sender_pubkey_data}'
-        hash = hashlib.sha256(transaction_recipe.encode()).hexdigest()
+        with open('hash.txt', 'w') as f:
+            f.write(transaction_recipe)
 
+        hash = hashlib.sha256(transaction_recipe.encode()).hexdigest()
         return hash
 
 def validate_transaction_signature(inputs_ids, outputs_data,
@@ -50,20 +56,16 @@ def validate_transaction_signature(inputs_ids, outputs_data,
         return False
     return True
 
-def find_valid_chain(block_hash):
+def find_valid_chains(block_hash):
     nodes = Node.objects.all()
-    proper_chain = {}
+    proper_chains = []
     for node in nodes:
         response = requests.get(f'http://{node.ip}/chain/')
         data = json.loads(response.text)
         hashes = [block.hash for block in data]
         if block_hash in hashes:
-            proper_chain = data['results']
-            break
-    else:
-        raise exceptions.ChainNotFound('Chain with given hash was not found')
-
-    return proper_chain
+            proper_chains += data['results']
+    return proper_chains
 
 def validate_chain(chain, excluded_inputs=None):
     spent_utxo_hashes = []
@@ -133,17 +135,20 @@ def replace_chain_part(new_part, wrong_part):
                 input_transaction=transaction)
 
 def fix_chain(block_hash):
-    proper_chain = find_valid_chain(block_hash)
+    proper_chains = find_valid_chains(block_hash)
+    if proper_chains is None:
+        raise exceptions.ChainNotFound('Blockchain with given previous block hash was not found'\
+                                       'within known nodes')
     blocks_hashes = Block.objects.all()[:50].values_list('hash', flat=True)
-    conflict_chain = [block for block in proper_chain\
+    conflict_chain = [block for block in proper_chains\
                         if block['hash'] not in blocks_hashes]
-    unvalid_chain = Block.objects.exclude(hash__in=[block.hash for block in proper_chain])
+    unvalid_chain = Block.objects.exclude(hash__in=[block.hash for block in proper_chains])
 
     if len(unvalid_chain) > len(conflict_chain):
         raise exceptions.ChainLengthError('Length of given chain'\
                                      ' less then current one')
 
-    unvalid_inputs_hashes = Utxo.objects.filter(input_transactions__block__in=unvalid_chain)
+    unvalid_inputs_hashes = Utxo.objects.filter(input_transaction__block__in=unvalid_chain)
 
 
     if not validate_chain(conflict_chain, unvalid_inputs_hashes):
